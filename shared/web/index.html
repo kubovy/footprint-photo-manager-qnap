@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Footprint</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="css/jquery-ui.min.css"/>
+    <style>
+        * {
+            font-family: 'QTS Font', 'Helvetica', 'Arial', 'Sans-serif', 'Verdana', 'Tahoma', arial, tahoma, helvetica, sans-serif;
+            font-size: 12px;
+            font-weight: normal;
+        }
+
+        /*noinspection CssUnusedSymbol*/
+        .ui-autocomplete {
+            max-height: 100px;
+            overflow-y: auto;
+            overflow-x: hidden; /* prevent horizontal scrollbar */
+        }
+
+        /* IE 6 doesn't support max-height
+         * we use height instead, but this forces the menu to always be this tall */
+        /*noinspection CssUnusedSymbol*/
+        * html .ui-autocomplete {
+            height: 100px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="">
+    <nav class="navbar navbar-dark bg-dark">
+        <a class="navbar-brand" href="#">
+            <img src="img/logo.gif" width="30" height="30" alt="">
+            Footprint
+        </a>
+    </nav>
+
+    <div class="container-fluid mt-3">
+        <h5 class="">Add new folder to scan</h5>
+        <form id="poterion-footprint-form">
+            <div class="d-flex">
+                <div class="form-group flex-fill">
+                    <label for="poterion-footprint-form-folder" class="sr-only">Folder</label>
+                    <input name="folder" type="text" class="form-control" id="poterion-footprint-form-folder">
+                </div>
+
+                <div class="flex-grow-0">
+                    <button type="submit" class="btn btn-success">Add</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!--<h5>List of scanned folders</h5>-->
+    <table id="poterion-footprint-table" class="table table-striped table-sm table-hover mt-3">
+        <thead class="thead-dark">
+        <tr>
+            <th scope="col">Folder</th>
+            <th scope="col">Status</th>
+            <th scope="col">Started</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Progress</th>
+            <th scope="col">Updates</th>
+            <th scope="col">&nbsp;</th>
+        </tr>
+        </thead>
+        <tbody id="poterion-footprint-table-body">
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modal-dialog" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Modal title</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-dark" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" data-dismiss="modal">OK</button>
+                <button type="button" class="btn btn-success" data-dismiss="modal">OK</button>
+                <button type="button" class="btn btn-danger" data-dismiss="modal">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script src="js/jquery.min.js"></script>
+<script src="js/jquery-ui.min.js"></script>
+<script src="js/bootstrap.min.js"></script>
+<script>
+    // const urlPrefix = "http://phellodon.intra/footprint/";
+    const urlPrefix = "";
+    let loadedFolders = [];
+
+    function getDuration(start, end) {
+        let duration = Math.trunc(end - start);
+        let units = "seconds";
+        if (duration > 60) {
+            duration /= 60;
+            units = "minutes";
+            if (duration > 60) {
+                duration /= 60;
+                units = "hours";
+                if (duration > 24) {
+                    duration /= 24;
+                    units = "days";
+                }
+                duration = Math.trunc(duration * 10) / 10
+            } else {
+                duration = Math.trunc(duration)
+            }
+        }
+        return duration + " " + units;
+    }
+
+    function updateStatus(folder, type, status) {
+        $("#poterion-footprint-table-body").find('tr').filter(function (index, element) {
+            return $(element).find("td.folder").text() === folder;
+        }).find("td." + type).text(status);
+    }
+
+    function pollStatus() {
+        for (let i = 0; i < loadedFolders.length; i++) {
+            let folder = loadedFolders[i];
+            $.get(urlPrefix + "action.php?action=folder-status&folder=" + folder, function (data) {
+                if (data && data["action"]) {
+                    let startTime = parseInt(data["startTime"]);
+                    let processTime = parseInt(data["processTime"]);
+                    let scannedCount = parseInt(data["scannedCount"]);
+                    let processedCount = parseInt(data["processedCount"]);
+                    let changedCount = parseInt(data["changedCount"]);
+                    let cachedCount = parseInt(data["cachedCount"]);
+                    let totalCount = parseInt(data["totalCount"]);
+                    let path = data["path"].trim();
+                    let percent = totalCount > 0 ? Math.trunc(scannedCount * 1000 / (totalCount + cachedCount)) / 10 : 0;
+                    //let percent = totalCount > 0 ? Math.trunc(processedCount * 1000 / totalCount) / 10 : 0;
+
+                    let startedAt = new Date(startTime * 1000); // The 0 there is the key, which sets the date to the epoch
+                    startedAt = (startedAt.getDate() < 10 ? "0" : "") + startedAt.getDate() + '.'
+                        + ((startedAt.getMonth() + 1) < 10 ? "0" : "") + (startedAt.getMonth() + 1) + '.'
+                        + startedAt.getFullYear() + ' '
+                        + (startedAt.getHours() < 10 ? "0" : "") + startedAt.getHours() + ':'
+                        + (startedAt.getMinutes() < 10 ? "0" : "") + startedAt.getMinutes();
+                    let now = Date.now() / 1000;
+
+                    switch (data["action"]) {
+                        case "QUEUED":
+                            updateStatus(folder, "status", "Queued...");
+                            updateStatus(folder, "started", "");
+                            updateStatus(folder, "duration", "");
+                            updateStatus(folder, "state", "...");
+                            updateStatus(folder, "updates", "");
+                            break;
+                        case "PREPARING":
+                        case "SCANNING":
+                        case "ARCHIVING":
+                            let status = "";
+                            switch (data["action"]) {
+                                case "ARCHIVING":
+                                    status = "Archiving...";
+                                    break;
+                                case "PREPARING":
+                                    status = "Preparing...";
+                                    break;
+                                default:
+                                    status = "Scanning (" + path + ")...";
+                                    status = (now - processTime) > 60 ? "Stalled!" : status;
+                                    break;
+                            }
+
+                            updateStatus(folder, "status", status);
+                            updateStatus(folder, "started", startedAt);
+                            updateStatus(folder, "duration", getDuration(startTime, now));
+                            updateStatus(folder, "state", percent + "% (" + scannedCount + "/" + (cachedCount + totalCount) + ")");
+                            updateStatus(folder, "updates", changedCount);
+                            break;
+                        case "STOPPING":
+                            updateStatus(folder, "status", "Stopping...");
+                            updateStatus(folder, "started", startedAt);
+                            updateStatus(folder, "duration", getDuration(startTime, now));
+                            updateStatus(folder, "state", percent + "% (" + scannedCount + "/" + (cachedCount + totalCount) + ")");
+                            updateStatus(folder, "updates", changedCount);
+                            break;
+                        case "STOPPED":
+                        case "FINISHED":
+                            updateStatus(folder, "status", data["action"] === "STOPPED" ? "Stopped" : "Finished");
+                            updateStatus(folder, "started", startedAt);
+                            updateStatus(folder, "duration", getDuration(startTime, processTime));
+                            updateStatus(folder, "state", totalCount + " items processed");
+                            updateStatus(folder, "updates", changedCount);
+                            break;
+                        case "NOP":
+                            updateStatus(folder, "status", "Never started");
+                            updateStatus(folder, "started", "");
+                            updateStatus(folder, "duration", "");
+                            updateStatus(folder, "state", "");
+                            updateStatus(folder, "updates", "");
+                            break;
+                        default:
+                            updateStatus(folder, "status", "?");
+                            updateStatus(folder, "started", "?");
+                            updateStatus(folder, "duration", "?");
+                            updateStatus(folder, "state", "?");
+                            updateStatus(folder, "updates", "?");
+                            break;
+                    }
+
+                    let row = $("#poterion-footprint-table-body").find('tr').filter(function (index, element) {
+                        return $(element).find("td.folder").text() === folder;
+                    });
+                    let scanBtn = row.find(".scanBtn");
+                    let stopBtn = row.find(".stopBtn");
+                    let removeBtn = row.find(".removeBtn");
+
+                    if (['QUEUED', 'PREPARING', 'SCANNING', 'ARCHIVING'].includes(data['action'])) {
+                        scanBtn.hide();
+                        stopBtn.show();
+                        removeBtn.hide();
+                    } else if (['STOPPING'].includes(data['action'])) {
+                        scanBtn.show();
+                        stopBtn.hide();
+                        removeBtn.hide();
+                    } else if (['STOPPED', 'FINISHED', 'NOP'].includes(data['action'])) {
+                        scanBtn.show();
+                        stopBtn.hide();
+                        removeBtn.show();
+                    } else {
+                        scanBtn.hide();
+                        stopBtn.hide();
+                        removeBtn.hide();
+                    }
+                }
+            });
+        }
+        setTimeout(function () {
+            pollStatus();
+        }, 1000);
+    }
+
+    function loadFolders() {
+        $.get(urlPrefix + "action.php?action=folder-list", function (data) {
+            if ($.isArray(data)) {
+                $("#poterion-footprint-table-body > tr").remove();
+                for (let i = 0; i < data.length; i++) {
+                    $("#poterion-footprint-table-body").append('<tr><td class="folder w-auto">' + data[i] + '</td>' +
+                        '<td class="status w-auto overflow-hidden" style="text-overflow: ellipsis;"></td>' +
+                        '<td class="started w-auto text-nowrap"></td>' +
+                        '<td class="duration w-auto text-nowrap"></td>' +
+                        '<td class="state w-auto text-nowrap"></td>' +
+                        '<td class="updates w-auto text-nowrap"></td>' +
+                        '<td class="actions col-1 text-nowrap">' +
+                        '<div class="btn-group" role="group">' +
+                        '<button type="button" class="btn btn-sm btn-info scanBtn">Scan</button>' +
+                        '<button type="button" class="btn btn-sm btn-warning stopBtn">Stop</button>' +
+                        '<button type="button" class="btn btn-sm btn-danger removeBtn">Remove</button>' +
+                        '</div>' +
+                        '</td>');
+                }
+                let scanBtn = $(".scanBtn");
+                scanBtn.hide();
+                scanBtn.on('click', function (event) {
+                    let folder = $(event.target).parent().parent().parent().find('td').first().text();
+                    if (folder !== "") {
+                        let dialog = $('#modal-dialog');
+                        dialog.find(".modal-title").text("Confirmation");
+                        dialog.find(".modal-body").text("Start scanning " + folder + "?");
+                        dialog.find(".btn-outline-dark").show();
+                        dialog.find(".btn-outline-dark").text("Cancel");
+                        dialog.find(".btn-primary").show();
+                        dialog.find(".btn-primary").text('Start');
+                        dialog.find(".btn-success").hide();
+                        dialog.find(".btn-danger").hide();
+                        dialog.find(".btn-primary").on('click', function () {
+                            dialog.find(".btn-primary").off('click');
+                            $.post(urlPrefix + "action.php?action=folder-scan", {folder: folder}, function () {
+                                loadedFolders();
+                            })
+                        });
+                        dialog.modal('show');
+                    }
+                });
+
+                let stopBtn = $(".stopBtn");
+                stopBtn.hide();
+                stopBtn.on('click', function (event) {
+                    let folder = $(event.target).parent().parent().parent().find('td').first().text();
+                    if (folder !== "") {
+                        let dialog = $('#modal-dialog');
+                        dialog.find(".modal-title").text("Confirmation");
+                        dialog.find(".modal-body").text("Do you really want to stop scanning " + folder + "?");
+                        dialog.find(".btn-outline-dark").show();
+                        dialog.find(".btn-outline-dark").text("Cancel");
+                        dialog.find(".btn-primary").show();
+                        dialog.find(".btn-primary").text('Stop');
+                        dialog.find(".btn-success").hide();
+                        dialog.find(".btn-danger").hide();
+                        dialog.find(".btn-primary").on('click', function () {
+                            dialog.find(".btn-primary").off('click');
+                            $.post(urlPrefix + "action.php?action=folder-stop", {folder: folder}, function () {
+                                loadFolders();
+                            });
+                        });
+                        dialog.modal('show');
+                    }
+                });
+
+                let removeBtn = $(".removeBtn");
+                removeBtn.hide();
+                removeBtn.on('click', function (event) {
+                    let folder = $(event.target).parent().parent().parent().find('td').first().text();
+                    if (folder !== "") {
+                        let dialog = $('#modal-dialog');
+                        dialog.find(".modal-title").text("Confirmation");
+                        dialog.find(".modal-body").text("Do you really want to delete " + folder + "?");
+                        dialog.find(".btn-outline-dark").show();
+                        dialog.find(".btn-primary").hide();
+                        dialog.find(".btn-success").hide();
+                        dialog.find(".btn-danger").show();
+                        dialog.find(".btn-outline-dark").text("Cancel");
+                        dialog.find(".btn-danger").text("Delete");
+                        dialog.find(".btn-danger").on('click', function () {
+                            dialog.find(".btn-danger").off('click');
+                            $.post(urlPrefix + "action.php?action=folder-delete", {folder: folder}, function () {
+                                loadFolders();
+                            });
+                        });
+                        dialog.modal('show');
+                    }
+                });
+                loadedFolders = data;
+            }
+            pollStatus();
+        });
+    }
+
+    $(function () {
+        let cache = {};
+        $("#poterion-footprint-form-folder").autocomplete({
+            minLength: 2,
+            source: function (request, response) {
+                let term = request.term.split("/");
+                term.pop();
+                term = term.join("/");
+                if (term in cache) {
+                    response(cache[term].filter((i) => i.startsWith(request.term)));
+                    return;
+                }
+
+                if (term !== "") {
+                    $.getJSON(urlPrefix + "action.php?action=autocomplete", request,
+                        function (data) {
+                            cache[term] = data;
+                            response(data.filter((i) => i.startsWith(request.term)));
+                        });
+                }
+            }
+        });
+        $("#poterion-footprint-form").submit(function (event) {
+            let folder = $("#poterion-footprint-form-folder").val();
+            if (folder.startsWith("/")) {
+                let found = false;
+                $("#poterion-footprint-table-body").find("tr td:first-child").each(function (i, e) {
+                    if (folder === $(e).text()) found = true;
+                });
+                if (found) {
+                    let dialog = $('#modal-dialog');
+                    dialog.find(".modal-title").text("Information");
+                    dialog.find(".modal-body").text("Folder " + folder + " is already in the list");
+                    dialog.find(".btn-outline-dark").show();
+                    dialog.find(".btn-primary").hide();
+                    dialog.find(".btn-success").hide();
+                    dialog.find(".btn-danger").hide();
+                    dialog.find(".btn-outline-dark").text("Close");
+                    dialog.modal('show');
+                } else {
+                    $.post(urlPrefix + "action.php?action=folder-add", $("#poterion-footprint-form").serialize(), function () {
+                        $("#poterion-footprint-form-folder").val("");
+                        loadFolders();
+                    });
+                }
+            }
+            event.preventDefault();
+        });
+        loadFolders();
+        setTimeout(function () {
+            pollStatus();
+        }, 2000);
+    });
+</script>
+
+</body>
+</html>
