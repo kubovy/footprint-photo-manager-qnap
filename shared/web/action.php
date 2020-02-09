@@ -3,8 +3,6 @@ error_reporting(E_ALL);
 header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
 $listFile = "/etc/config/footprint.list";
-$proposalFile = "/etc/config/footprint.list.propsal";
-$removalFile = "/etc/config/footprint.list.removal";
 $sharePrefix = "/share";
 $folderDirectory = ".footprint";
 $statusFile = "${folderDirectory}/status";
@@ -33,26 +31,13 @@ function readFolderList() {
     return $folders;
 }
 
-//function writeFolderList($folders) {
-//    global $listFile;
-//    $handle = fopen($listFile, "w");
-//    if ($handle) {
-//        foreach ($folders as $folder) {
-//            fwrite($handle, "${folder}\n");
-//        }
-//        fclose($handle);
-//        echo "\"OK\"";
-//    } else {
-//        http_response_code(500);
-//        echo "\"Could not change list\"";
-//        exit(0);
-//    }
-//}
-
-function writeFolder($file, $folder) {
-    $handle = fopen($file, "w");
+function writeFolderList($folders) {
+    global $listFile;
+    $handle = fopen($listFile, "w");
     if ($handle) {
-        fwrite($handle, "${folder}\n");
+        foreach ($folders as $folder) {
+            fwrite($handle, "${folder}\n");
+        }
         fclose($handle);
         echo "\"OK\"";
     } else {
@@ -151,10 +136,9 @@ switch ($query["action"]) {
         foreach ($_POST as $key => $value) {
             if ($key == "folder") {
                 $value = urldecode($value);
-                //$folders = readFolderList();
-                //if (!in_array($value, $folders)) array_push($folders, $value);
-                //writeFolderList($folders);
-                writeFolder($proposalFile, $value);
+                $folders = readFolderList();
+                if (!in_array($value, $folders)) array_push($folders, $value);
+                writeFolderList($folders);
             }
         }
         exit(0);
@@ -163,11 +147,10 @@ switch ($query["action"]) {
         foreach ($_POST as $key => $value) {
             if ($key == "folder") {
                 $value = urldecode($value);
-                //$folders = readFolderList();
-                //$index = array_search($value, $folders);
-                //if ($index !== false) unset($folders[$index]);
-                //writeFolderList($folders);
-                writeFolder($removalFile, $value);
+                $folders = readFolderList();
+                $index = array_search($value, $folders);
+                if ($index !== false) unset($folders[$index]);
+                writeFolderList($folders);
             }
         }
         exit(0);
