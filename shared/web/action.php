@@ -132,6 +132,16 @@ if (!in_array("action", array_keys($query))) {
 }
 
 switch ($query["action"]) {
+    case "folders-status":
+        $status = array();
+        foreach (readFolderList() as $folder) {
+            $status[] = array(
+                "folder" => $folder,
+                "status" => getStatus($folder));
+        }
+        echo json_encode($status);
+        exit(0);
+        break;
     case "folder-add":
         foreach ($_POST as $key => $value) {
             if ($key == "folder") {
@@ -160,42 +170,29 @@ switch ($query["action"]) {
         echo json_encode($folders);
         exit(0);
         break;
-    case "folder-status":
-        if (in_array("folder", array_keys($query))) {
-            echo json_encode(getStatus($query["folder"]));
-        } else {
-            http_response_code(400);
-            echo "\"No folder specified\"";
-        }
-        exit(0);
-        break;
     case "folder-scan":
-        foreach ($_POST as $key => $value) {
-            if ($key == "folder") {
-                $value = urldecode($value);
-                if (file_exists("${sharePrefix}${value}/${stopFile}")) {
-                    unlink("${sharePrefix}${value}/${stopFile}");
-                }
-                if (!file_exists("${sharePrefix}${value}/${$folderDirectory}")) {
-                    mkdir("${sharePrefix}${value}/${$folderDirectory}");
-                }
-                touch("${sharePrefix}${value}/${scanNowFile}");
+        if (array_key_exists('folder', $_POST)) {
+            $folder = urldecode($_POST['folder']);
+            if (file_exists("${sharePrefix}${folder}/${stopFile}")) {
+                unlink("${sharePrefix}${folder}/${stopFile}");
             }
+            if (!file_exists("${sharePrefix}${folder}/${$folderDirectory}")) {
+                mkdir("${sharePrefix}${folder}/${$folderDirectory}");
+            }
+            touch("${sharePrefix}${folder}/${scanNowFile}");
         }
         exit(0);
         break;
     case "folder-stop":
-        foreach ($_POST as $key => $value) {
-            if ($key == "folder") {
-                $value = urldecode($value);
-                if (file_exists("${sharePrefix}${value}/${stopFile}")) {
-                    unlink("${sharePrefix}${value}/${scanNowFile}");
-                }
-                if (!file_exists("${sharePrefix}${value}/${$folderDirectory}")) {
-                    mkdir("${sharePrefix}${value}/${$folderDirectory}");
-                }
-                touch("${sharePrefix}${value}/${stopFile}");
+        if (array_key_exists('folder', $_POST)) {
+            $folder = urldecode($_POST['folder']);
+            if (file_exists("${sharePrefix}${folder}/${scanNowFile}")) {
+                unlink("${sharePrefix}${folder}/${scanNowFile}");
             }
+            if (!file_exists("${sharePrefix}${folder}/${$folderDirectory}")) {
+                mkdir("${sharePrefix}${folder}/${$folderDirectory}");
+            }
+            touch("${sharePrefix}${folder}/${stopFile}");
         }
         exit(0);
         break;

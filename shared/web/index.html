@@ -100,6 +100,7 @@
     // const urlPrefix = "http://phellodon.intra/footprint/";
     const urlPrefix = "";
     let loadedFolders = [];
+    let polling = false;
 
     function getDuration(start, end) {
         let duration = Math.trunc(end - start);
@@ -129,19 +130,23 @@
     }
 
     function pollStatus() {
-        for (let i = 0; i < loadedFolders.length; i++) {
-            let folder = loadedFolders[i];
-            $.get(urlPrefix + "action.php?action=folder-status&folder=" + folder, function (data) {
-                if (data && data["action"]) {
-                    let startTime = parseInt(data["startTime"]);
-                    let processTime = parseInt(data["processTime"]);
-                    let scannedCount = parseInt(data["scannedCount"]);
-                    let processedCount = parseInt(data["processedCount"]);
-                    let changedCount = parseInt(data["changedCount"]);
-                    let cachedCount = parseInt(data["cachedCount"]);
-                    let totalCount = parseInt(data["totalCount"]);
-                    let path = data["path"].trim();
+        if (polling) return;
+        polling = true;
+        $.get(urlPrefix + "action.php?action=folders-status", function (data) {
+            if (data && data.length) for (let i = 0; i < data.length; i++) if (data[i].folder && data[i].status) {
+                let folder = data[i].folder;
+                let status = data[i].status;
+                if (status && status["action"]) {
+                    let startTime = parseInt(status["startTime"]);
+                    let processTime = parseInt(status["processTime"]);
+                    let scannedCount = parseInt(status["scannedCount"]);
+                    let processedCount = parseInt(status["processedCount"]);
+                    let changedCount = parseInt(status["changedCount"]);
+                    let cachedCount = parseInt(status["cachedCount"]);
+                    let totalCount = parseInt(status["totalCount"]);
+                    let path = status["path"].trim();
                     let percent = totalCount > 0 ? Math.trunc(scannedCount * 1000 / (totalCount + cachedCount)) / 10 : 0;
+                    if ((percent + '').indexOf('.') === -1) percent = percent + '.0';
                     //let percent = totalCount > 0 ? Math.trunc(processedCount * 1000 / totalCount) / 10 : 0;
 
                     let startedAt = new Date(startTime * 1000); // The 0 there is the key, which sets the date to the epoch
@@ -152,7 +157,7 @@
                         + (startedAt.getMinutes() < 10 ? "0" : "") + startedAt.getMinutes();
                     let now = Date.now() / 1000;
 
-                    switch (data["action"]) {
+                    switch (status["action"]) {
                         case "QUEUED":
                             updateStatus(folder, "status", "Queued...");
                             updateStatus(folder, "started", "");
@@ -163,21 +168,22 @@
                         case "PREPARING":
                         case "SCANNING":
                         case "ARCHIVING":
-                            let status = "";
-                            switch (data["action"]) {
+                            let statusMsg = "";
+                            switch (status["action"]) {
                                 case "ARCHIVING":
-                                    status = "Archiving...";
+                                    statusMsg = "Archiving...";
                                     break;
                                 case "PREPARING":
-                                    status = "Preparing...";
+                                    statusMsg = "Preparing...";
                                     break;
                                 default:
-                                    status = "Scanning (" + path + ")...";
-                                    status = (now - processTime) > 60 ? "Stalled!" : status;
+                                    statusMsg = (now - processTime) > 60
+                                        ? "Stalled!"
+                                        : "Scanning (" + /[^/]*$/.exec(path)[0] + ")...";
                                     break;
                             }
 
-                            updateStatus(folder, "status", status);
+                            updateStatus(folder, "status", statusMsg);
                             updateStatus(folder, "started", startedAt);
                             updateStatus(folder, "duration", getDuration(startTime, now));
                             updateStatus(folder, "state", percent + "% (" + scannedCount + "/" + (cachedCount + totalCount) + ")");
@@ -192,7 +198,7 @@
                             break;
                         case "STOPPED":
                         case "FINISHED":
-                            updateStatus(folder, "status", data["action"] === "STOPPED" ? "Stopped" : "Finished");
+                            updateStatus(folder, "status", status["action"] === "STOPPED" ? "Stopped" : "Finished");
                             updateStatus(folder, "started", startedAt);
                             updateStatus(folder, "duration", getDuration(startTime, processTime));
                             updateStatus(folder, "state", totalCount + " items processed");
@@ -221,15 +227,15 @@
                     let stopBtn = row.find(".stopBtn");
                     let removeBtn = row.find(".removeBtn");
 
-                    if (['QUEUED', 'PREPARING', 'SCANNING', 'ARCHIVING'].includes(data['action'])) {
+                    if (['QUEUED', 'PREPARING', 'SCANNING', 'ARCHIVING'].includes(status['action'])) {
                         scanBtn.hide();
                         stopBtn.show();
                         removeBtn.hide();
-                    } else if (['STOPPING'].includes(data['action'])) {
+                    } else if (['STOPPING'].includes(status['action'])) {
                         scanBtn.show();
                         stopBtn.hide();
                         removeBtn.hide();
-                    } else if (['STOPPED', 'FINISHED', 'NOP'].includes(data['action'])) {
+                    } else if (['STOPPED', 'FINISHED', 'NOP'].includes(status['action'])) {
                         scanBtn.show();
                         stopBtn.hide();
                         removeBtn.show();
@@ -239,8 +245,9 @@
                         removeBtn.hide();
                     }
                 }
-            });
-        }
+            }
+        });
+        polling = false;
         setTimeout(function () {
             pollStatus();
         }, 1000);
@@ -249,6 +256,7 @@
     function loadFolders() {
         $.get(urlPrefix + "action.php?action=folder-list", function (data) {
             if ($.isArray(data)) {
+                data.sort();
                 $("#poterion-footprint-table-body > tr").remove();
                 for (let i = 0; i < data.length; i++) {
                     $("#poterion-footprint-table-body").append('<tr><td class="folder w-auto">' + data[i] + '</td>' +
@@ -281,9 +289,11 @@
                         dialog.find(".btn-danger").hide();
                         dialog.find(".btn-primary").on('click', function () {
                             dialog.find(".btn-primary").off('click');
-                            $.post(urlPrefix + "action.php?action=folder-scan", {folder: folder}, function () {
-                                loadedFolders();
-                            })
+                            $.post(urlPrefix + "action.php?action=folder-scan",
+                                {folder: encodeURIComponent(folder)},
+                                function () {
+                                    loadedFolders();
+                                })
                         });
                         dialog.modal('show');
                     }
@@ -305,9 +315,11 @@
                         dialog.find(".btn-danger").hide();
                         dialog.find(".btn-primary").on('click', function () {
                             dialog.find(".btn-primary").off('click');
-                            $.post(urlPrefix + "action.php?action=folder-stop", {folder: folder}, function () {
-                                loadFolders();
-                            });
+                            $.post(urlPrefix + "action.php?action=folder-stop",
+                                {folder: encodeURIComponent(folder)},
+                                function () {
+                                    loadFolders();
+                                });
                         });
                         dialog.modal('show');
                     }
@@ -329,9 +341,11 @@
                         dialog.find(".btn-danger").text("Delete");
                         dialog.find(".btn-danger").on('click', function () {
                             dialog.find(".btn-danger").off('click');
-                            $.post(urlPrefix + "action.php?action=folder-delete", {folder: folder}, function () {
-                                loadFolders();
-                            });
+                            $.post(urlPrefix + "action.php?action=folder-delete",
+                                {folder: encodeURIComponent(folder)},
+                                function () {
+                                    loadFolders();
+                                });
                         });
                         dialog.modal('show');
                     }
@@ -391,9 +405,6 @@
             event.preventDefault();
         });
         loadFolders();
-        setTimeout(function () {
-            pollStatus();
-        }, 2000);
     });
 </script>
 
