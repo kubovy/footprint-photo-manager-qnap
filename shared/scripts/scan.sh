@@ -10,11 +10,12 @@ EXIFTOOL="/share/CACHEDEV1_DATA/.qpkg/Entware/bin/exiftool"
 
 STOP_FILE="/tmp/footprint-stop"
 
-FOOTPRINT_FOLDER=".footprint"
-FOLDER_LIST_FILE="${SCAN_PATH}/${FOOTPRINT_FOLDER}/list"
-FOLDER_CACHE_FILE="${FOOTPRINT_FOLDER}/cache"
-FOLDER_STATUS_FILE="${SCAN_PATH}/${FOOTPRINT_FOLDER}/status"
-FOLDER_STOP_FILE="${SCAN_PATH}/${FOOTPRINT_FOLDER}/stop"
+FOOTPRINT_PATH="${SCAN_PATH}/.footprint"
+FOLDER_LIST_FILE="${FOOTPRINT_PATH}/list"
+FOLDER_LIST_PROCESSING_FILE="${FOLDER_LIST_FILE}.processing"
+FOLDER_CACHE_FILE="${FOOTPRINT_PATH}/cache"
+FOLDER_STATUS_FILE="${FOOTPRINT_PATH}/status"
+FOLDER_STOP_FILE="${FOOTPRINT_PATH}/stop"
 
 START_TIME=$(date +%s);
 CHANGED_COUNT=0;
@@ -25,8 +26,8 @@ CACHED_COUNT=0;
 
 echo "${START_TIME}|$(date +%s)|PREPARING|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||" > "${FOLDER_STATUS_FILE}";
 
-if [[ ! -d "${SCAN_PATH}/${FOOTPRINT_FOLDER}" ]]; then
-  mkdir -p "${SCAN_PATH}/${FOOTPRINT_FOLDER}"
+if [[ ! -d "${FOOTPRINT_PATH}" ]]; then
+  mkdir -p "${FOOTPRINT_PATH}"
 fi
 
 hashGet() {
@@ -35,13 +36,80 @@ hashGet() {
     printf '%s' "${!i}"
 }
 
+isRelevant() {
+  file=$1
+  ext=$(echo "${file##*.}" | awk '{print tolower($0)}')
+  if [[ ${ext} = "bmp"\
+        || ${ext} = "exif"\
+        || ${ext} = "gif"\
+        || ${ext} = "jpg" || ${ext} = "jpeg" || ${ext} = "jp2" || ${ext} = "jpx"\
+        || ${ext} = "png"\
+        || ${ext} = "3fr"\
+        || ${ext} = "ari"\
+        || ${ext} = "arw" || ${ext} = "srf" || ${ext} = "sr2"\
+        || ${ext} = "bay"\
+        || ${ext} = "braw"\
+        || ${ext} = "cri"\
+        || ${ext} = "crw" || ${ext} = "cr2" || ${ext} = "cr3"\
+        || ${ext} = "cap" || ${ext} = "iiq" || ${ext} = "eip"\
+        || ${ext} = "dcs" || ${ext} = "dcr" || ${ext} = "drf" || ${ext} = "k25" || ${ext} = "kdc"\
+        || ${ext} = "dng"\
+        || ${ext} = "erf"\
+        || ${ext} = "fff"\
+        || ${ext} = "gpr"\
+        || ${ext} = "mef"\
+        || ${ext} = "mdc"\
+        || ${ext} = "mos"\
+        || ${ext} = "mrw"\
+        || ${ext} = "nef" || ${ext} = "nrw"\
+        || ${ext} = "orf"\
+        || ${ext} = "pet" || ${ext} = "ptx"\
+        || ${ext} = "pxn"\
+        || ${ext} = "r3d"\
+        || ${ext} = "raf"\
+        || ${ext} = "raw" || ${ext} = "rw2"\
+        || ${ext} = "rwl"\
+        || ${ext} = "rwz"\
+        || ${ext} = "srw"\
+        || ${ext} = "x3f"\
+        || ${ext} = "3gp" || ${ext} = "3g2"\
+        || ${ext} = "asf"\
+        || ${ext} = "amv"\
+        || ${ext} = "avi"\
+        || ${ext} = "drc"\
+        || ${ext} = "flv" || ${ext} = "f4v" || ${ext} = "f4p" || ${ext} = "f4a" || ${ext} = "f4b"\
+        || ${ext} = "mkv"\
+        || ${ext} = "mpg" || ${ext} = "mp2" || ${ext} = "mpeg" || ${ext} = "mpe" || ${ext} = "mpv" || ${ext} = "m2v"\
+        || ${ext} = "mp4" || ${ext} = "m4p" || ${ext} = "m4v"\
+        || ${ext} = "mxf"\
+        || ${ext} = "nsv"\
+        || ${ext} = "roq"\
+        || ${ext} = "rm" || ${ext} = "rmvb"\
+        || ${ext} = "svi"\
+        || ${ext} = "vob" || ${ext} = "ogv" || ${ext} = "ogg"\
+        || ${ext} = "webm"\
+        || ${ext} = "wmv"\
+        || ${ext} = "yuv" ]]; then
+    return 0 # True
+  else
+    return 1 # False
+  fi
+}
+
 countFiles() {
   count=0;
   for path in "${1}"*; do
+    if [[ -f "${FOLDER_STOP_FILE}" || -f ${STOP_FILE} ]]; then
+      rm "${FOLDER_STOP_FILE}" || true
+      echo "${START_TIME}|$(date +%s)|STOPPED|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||" > "${FOLDER_STATUS_FILE}";
+      exit 0
+    fi
     if [[ -d "${path}" ]];then
       count=$((count + $(countFiles "${path}/")));
     elif [[ -f "${path}" ]]; then
-      count=$((count + 1));
+      if isRelevant "${path}"; then
+        count=$((count + 1));
+      fi
     fi
   done
   echo "${count}";
@@ -59,15 +127,21 @@ scanFile() {
   fi
 
   key=$(echo "${file}" | sed -E 's/[^a-zA-Z0-9]/_/g')
-  logMessage="${file}"
+  logMessage="${SCAN_PATH}/${file}"
 
   if [[ ! -f "${file}" ]]; then # Remove non existing files from cache
     grep -v "declare \"list_${key}=" "${FOLDER_CACHE_FILE}" > "${FOLDER_CACHE_FILE}.tmp"
     mv "${FOLDER_CACHE_FILE}.tmp" "${FOLDER_CACHE_FILE}"
-    grep -v "${file}|" "${FOLDER_LIST_FILE}" > "/tmp/$(basename "${FOLDER_LIST_FILE}").tmp"
-    mv "/tmp/$(basename "${FOLDER_LIST_FILE}").tmp" "${FOLDER_LIST_FILE}"
+    grep -v "${file}|" "${FOLDER_LIST_PROCESSING_FILE}" > "${FOLDER_LIST_PROCESSING_FILE}.tmp"
+    mv "${FOLDER_LIST_PROCESSING_FILE}.tmp" "${FOLDER_LIST_PROCESSING_FILE}"
     echo -e "\033[2K\r${logMessage} was removed (took: $(($(date +%s) - start))s)"
-  else # File exists, lets proceed
+  elif ! isRelevant "${file}"; then
+    grep -v "declare \"list_${key}=" "${FOLDER_CACHE_FILE}" > "${FOLDER_CACHE_FILE}.tmp"
+    mv "${FOLDER_CACHE_FILE}.tmp" "${FOLDER_CACHE_FILE}"
+    grep -v "${file}|" "${FOLDER_LIST_PROCESSING_FILE}" > "${FOLDER_LIST_PROCESSING_FILE}.tmp"
+    mv "${FOLDER_LIST_PROCESSING_FILE}.tmp" "${FOLDER_LIST_PROCESSING_FILE}"
+    echo -e "\033[2K\r${logMessage} not relevant (took: $(($(date +%s) - start))s)"
+  else # File exists and is relevant, lets proceed
     SCANNED_COUNT=$((SCANNED_COUNT + 1));
     stat=$(stat -c '%s|%W|%Y' "${file}")
     length=$(echo "${stat}" | cut -d'|' -f1)
@@ -75,7 +149,7 @@ scanFile() {
 
     isSame=0
     foundInList=0
-    if [[ -f ${FOLDER_LIST_FILE} ]]; then
+    if [[ -f ${FOLDER_LIST_PROCESSING_FILE} ]]; then
       previous=$(hashGet list "${key}")
       if [[ -n ${previous} ]]; then
         foundInList=1
@@ -103,16 +177,16 @@ scanFile() {
         if [[ ${foundInList} = 1 ]]; then #
           grep -v "declare \"list_${key}=" "${FOLDER_CACHE_FILE}" > "${FOLDER_CACHE_FILE}.tmp"
           mv "${FOLDER_CACHE_FILE}.tmp" "${FOLDER_CACHE_FILE}"
-          grep -v "${file}|" "${FOLDER_LIST_FILE}" > "/tmp/$(basename "${FOLDER_LIST_FILE}").tmp"
-          mv "/tmp/$(basename "${FOLDER_LIST_FILE}").tmp" "${FOLDER_LIST_FILE}"
+          grep -v "${file}|" "${FOLDER_LIST_PROCESSING_FILE}" > "${FOLDER_LIST_PROCESSING_FILE}.tmp"
+          mv "${FOLDER_LIST_PROCESSING_FILE}.tmp" "${FOLDER_LIST_PROCESSING_FILE}"
         fi
         echo "declare \"list_${key}=${LINE}\"" >> "${FOLDER_CACHE_FILE}"
-        echo "${LINE}" >> "${FOLDER_LIST_FILE}"
+        echo "${LINE}" >> "${FOLDER_LIST_PROCESSING_FILE}"
       else
         logMessage="${logMessage} did not change"
       fi
 
-      METADATA_FILE="${FOOTPRINT_FOLDER}/metadata/${file}.txt"
+      METADATA_FILE="${FOOTPRINT_PATH}/metadata/${file}.txt"
       #METADATA_FILENAME=$(basename "${METADATA_FILE}")
       #METADATA_FILENAME="${METADATA_FILENAME%.*}"
       #METADATA_FILE="$(dirname "${METADATA_FILE}")/${METADATA_FILENAME}.txt"
@@ -123,10 +197,10 @@ scanFile() {
         logMessage="${logMessage} [metadata extracted]"
       fi
 
-      THUMBNAIL_FILE="${FOOTPRINT_FOLDER}/thumbnails/${file}"
+      THUMBNAIL_FILE="${FOOTPRINT_PATH}/thumbnails/${file}"
       if [[ ! -f "${THUMBNAIL_FILE}" || ${isSame} = 0 ]]; then
         mkdir -p "$(dirname "${THUMBNAIL_FILE}")"
-        ffmpeg -i "${file}" -vframes 1 -an -vf "scale=500:-1" -y "${FOOTPRINT_FOLDER}/thumbnails/${file}" &> /dev/null
+        ffmpeg -i "${file}" -vframes 1 -an -vf "scale=500:-1" -y "${FOOTPRINT_PATH}/thumbnails/${file}" &> /dev/null
         logMessage="${logMessage} [thumbnail generated]"
       fi
 
@@ -155,7 +229,9 @@ scanDirectory() {
       if [[ -d "${filePath}" ]];then
         scanDirectory "${filePath}/" "${mode}"
       elif [[ -f "${filePath}" ]]; then
-        scanFile "${filePath}" "${mode}"
+        if isRelevant "${filePath}"; then
+            scanFile "${filePath}" "${mode}"
+        fi
       fi
     fi
   done
@@ -163,47 +239,25 @@ scanDirectory() {
 }
 
 scanCache() {
-    #OLDIFS=${IFS}
-    cp "${FOLDER_CACHE_FILE}" "${FOLDER_CACHE_FILE}.work"
-    while read -r lineInFile; do
+    while IFS= read -r lineInFile; do
         filePath="$(cat "${FOLDER_CACHE_FILE}" | grep "${lineInFile}" | sed -E 's/^[^=]+=([^"]+)"$/\1/g' | cut -d'|' -f1)"
-        #filePath="$(echo ${lineInFile} | sed -E 's/^[^=]+=([^"]+)"$/\1/g' | cut -d'|' -f1)"
+        # Scan including irrelevant files from cache, they will be sorted out later
         scanFile "${filePath}" 1
     done < "${FOLDER_CACHE_FILE}.work"
     rm "${FOLDER_CACHE_FILE}.work"
-    #IFS=${OLDIFS}
 }
 
 CURRENT_DIRECTORY=$(pwd)
 cd "${SCAN_PATH}" || exit 1
 
-##CACHE_ROTTEN=0
-##if [[ -f "${FOLDER_CACHE_FILE}" ]]; then
-##  AGE=$(($(date +%s) - $(stat -c '%Y' "${FOLDER_CACHE_FILE}")))
-##  if [[ ${AGE} -lt 7776000 ]]; then # 3 months
-##    CACHE_ROTTEN=0
-##  fi
-##fi
-##
-##if [[ ! -f "${FOLDER_CACHE_FILE}" || ${CACHE_ROTTEN} = 1 ]]; then
-##  #echo "Building cache"
-##  rm "${FOLDER_CACHE_FILE}"
-##  index=0
-##  COUNT="$(wc -l "${FOLDER_LIST_FILE}" | cut -d" " -f1)"
-##  while IFS= read -r line
-##  do
-##    key=$(echo "${line}" | cut -d"|" -f1 | sed -E 's/[^a-zA-Z0-9]/_/g')
-##    index=$((index + 1))
-##    echo -ne "\033[2K\rBuilding cache ${index}/${COUNT} ($((index * 100 / COUNT))%)"
-##    echo "declare \"list_${key}=${line}\"" >> "${FOLDER_CACHE_FILE}"
-##  done < "${FOLDER_LIST_FILE}"
-##  echo "\033[2K\rCache build"
-##fi
-
 echo -n "Counting files in ${SCAN_PATH} ..."
 TOTAL_COUNT=$(countFiles)
 echo -e "\033[2K\rTotal files in ${SCAN_PATH}: ${TOTAL_COUNT}"
 echo "${START_TIME}|$(date +%s)|PREPARING|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||0" > "${FOLDER_STATUS_FILE}";
+
+if [[ -f "${FOLDER_LIST_FILE}" ]]; then
+  cp ${FOLDER_LIST_FILE} "${FOLDER_LIST_PROCESSING_FILE}"
+fi
 
 echo -n "Loading cache..."
 cat "${FOLDER_CACHE_FILE}" | sort -u > "${FOLDER_CACHE_FILE}.tmp"
@@ -213,18 +267,20 @@ CACHED_COUNT=$(cat "${FOLDER_CACHE_FILE}" | wc -l)
 echo -e "\033[2K\rCache loaded"
 echo "${START_TIME}|$(date +%s)|PREPARING|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||0" > "${FOLDER_STATUS_FILE}";
 
+cp "${FOLDER_CACHE_FILE}" "${FOLDER_CACHE_FILE}.work"
 scanDirectory "" 0 # new files
 echo "${START_TIME}|$(date +%s)|PREPARING|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||1" > "${FOLDER_STATUS_FILE}";
 #scanDirectory "" 1 # check/update existing
 scanCache
+mv ${FOLDER_LIST_PROCESSING_FILE} "${FOLDER_LIST_FILE}"
 echo -e "\033[2K\rScanning finished"
 
 echo "${START_TIME}|$(date +%s)|ARCHIVING|${SCANNED_COUNT}|${PROCESSED_COUNT}|${CHANGED_COUNT}|${CACHED_COUNT}|${TOTAL_COUNT}||" > "${FOLDER_STATUS_FILE}";
 echo -n "Creating archives..."
-tar -czf .footprint/thumbnails.tar.gz.tmp -C .footprint/thumbnails .
-mv .footprint/thumbnails.tar.gz.tmp .footprint/thumbnails.tar.gz
-tar -czf .footprint/metadata.tar.gz.tmp -C .footprint/metadata .
-mv .footprint/metadata.tar.gz.tmp .footprint/metadata.tar.gz
+tar -czf "${SCAN_PATH}/.footprint/thumbnails.tar.gz.tmp" -C "${SCAN_PATH}/.footprint/thumbnails" .
+mv "${SCAN_PATH}/.footprint/thumbnails.tar.gz.tmp" "${SCAN_PATH}/.footprint/thumbnails.tar.gz"
+tar -czf "${SCAN_PATH}/.footprint/metadata.tar.gz.tmp" -C "${SCAN_PATH}/.footprint/metadata" .
+mv "${SCAN_PATH}/.footprint/metadata.tar.gz.tmp" "${SCAN_PATH}/.footprint/metadata.tar.gz"
 echo -e "\033[2K\rArchives created"
 
 cd "${CURRENT_DIRECTORY}" || exit 1

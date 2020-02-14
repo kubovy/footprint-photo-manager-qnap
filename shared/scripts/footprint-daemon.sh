@@ -37,7 +37,7 @@ while true; do
   SINCE_LAST=$((NOW - LAST_SCAN))
 
   cp "${LIST_FILE}" "${LIST_FILE}.processing"
-  while IFS= read folder; do
+  while IFS= read -r folder; do
     if [[ ! -d "${SHARE_PREFIX}${folder}/.footprint" ]]; then
       mkdir -p "${SHARE_PREFIX}${folder}/.footprint"
       chmod a+rw "${SHARE_PREFIX}${folder}/.footprint"
@@ -51,7 +51,7 @@ while true; do
     echo -n "" > /var/log/footprint-daemon.log # Periodically clear log
     echo "[$(date "+%Y-%m-%d %H:%M:%S")] Last scan: ${LAST_SCAN}, now: ${NOW}, since: ${SINCE_LAST}, delay: ${DELAY}"
     cp "${LIST_FILE}" "${LIST_FILE}.processing"
-    while IFS= read folder; do
+    while IFS= read -r folder; do
       if [[ ! -f "${SHARE_PREFIX}${folder}${SCAN_FILE}" ]]; then
         touch "${SHARE_PREFIX}${folder}${SCAN_FILE}";
         echo "[$(date "+%Y-%m-%d %H:%M:%S")] ${SHARE_PREFIX}${folder}${SCAN_FILE} created"
@@ -62,16 +62,16 @@ while true; do
 
   # Scan marked folders
   cp "${LIST_FILE}" "${LIST_FILE}.processing"
-  while IFS= read folder; do
-    echo "[$(date "+%Y-%m-%d %H:%M:%S")] Checking ${SHARE_PREFIX}${folder}"
+  while IFS= read -r folder; do
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] Checking ${SHARE_PREFIX}${folder} ${SINCE_LAST} < ${DELAY}"
     checkStop
     if [[ -f "${SHARE_PREFIX}${folder}${SCAN_FILE}" ]]; then
       LAST_SCAN=${NOW} # Update before scan
       rm "${SHARE_PREFIX}${folder}${SCAN_FILE}";
       echo "[$(date "+%Y-%m-%d %H:%M:%S")] Scanning ${SHARE_PREFIX}${folder}, ${SHARE_PREFIX}${folder}${SCAN_FILE} removed"
       "${ROOT_PATH}/scripts/scan.sh" "${SHARE_PREFIX}${folder}"
+      LAST_SCAN=${NOW} # Update after scan
     fi
-    LAST_SCAN=${NOW} # Update after scan
   done < "${LIST_FILE}.processing"
   rm "${LIST_FILE}.processing"
 
