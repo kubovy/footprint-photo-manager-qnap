@@ -48,6 +48,7 @@ while true; do
 
   # Mark folder for scan
   if [[ ${SINCE_LAST} -gt ${DELAY} ]]; then
+    echo -n "" > /var/log/footprint-daemon.log # Periodically clear log
     echo "[$(date "+%Y-%m-%d %H:%M:%S")] Last scan: ${LAST_SCAN}, now: ${NOW}, since: ${SINCE_LAST}, delay: ${DELAY}"
     cp "${LIST_FILE}" "${LIST_FILE}.processing"
     while IFS= read folder; do

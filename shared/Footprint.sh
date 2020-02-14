@@ -11,7 +11,7 @@ STOP_FILE="/tmp/footprint-stop"
 
 export QNAP_QPKG=${QPKG_NAME}
 
-echo "Footprint [$(date)]: $0 $1 root=${QPKG_ROOT}, apacheRoot=${APACHE_ROOT}" >> /tmp/footprint.log
+#echo "Footprint [$(date)]: $0 $1 root=${QPKG_ROOT}, apacheRoot=${APACHE_ROOT}" >> /var/log/footprint.log
 
 case "$1" in
   start)
@@ -31,8 +31,8 @@ case "$1" in
     rm "${STOP_FILE}" || true
 
     if [[ ! -f "${PID_FILE}" ]]; then
-        #nohup "${QPKG_ROOT}/scripts/footprint-daemon.sh" > /tmp/footprint-daemon.log &
-        "${QPKG_ROOT}/scripts/footprint-daemon.sh" > /tmp/footprint-daemon.log &
+        #nohup "${QPKG_ROOT}/scripts/footprint-daemon.sh" > /var/log/footprint-daemon.log &
+        "${QPKG_ROOT}/scripts/footprint-daemon.sh" > /var/log/footprint-daemon.log &
         echo $! > "${PID_FILE}"
     fi
     ;;
